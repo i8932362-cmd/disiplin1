@@ -1,0 +1,242 @@
+PERAN
+Kamu adalah senior full-stack developer dan UI/UX designer. Bangun aplikasi web lengkap bernama "DISIPLIN KITA BISA", aplikasi presensi dan kedisiplinan siswa sekolah. Antarmuka berbahasa Indonesia. Nama variabel, fungsi, dan kolom database memakai bahasa Inggris. Kerjakan SEMUA modul di bawah secara berurutan dan jangan ada fitur yang dikosongkan atau hanya berupa placeholder.
+
+==================================================
+BAGIAN 1 - ARSITEKTUR & ATURAN TEKNIS (WAJIB)
+==================================================
+1. Stack: React + Vite + TypeScript, Tailwind CSS, Recharts untuk grafik, SheetJS (xlsx) untuk template/impor/ekspor Excel. Backend memakai serverless function di folder /api (siap deploy Vercel). JANGAN memakai Express server yang berjalan terus-menerus. JANGAN memakai Google Apps Script. JANGAN memakai Supabase atau Firebase.
+2. Database: Google Sheets (data tabel) dan Google Drive (foto bukti pelanggaran, file background, foto siswa). Akses lewat Google Sheets API dan Drive API menggunakan Service Account. Semua kredensial hanya dibaca dari environment variable di sisi server: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, SPREADSHEET_ID, DRIVE_FOLDER_ID, JWT_SECRET, serta untuk email: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM_NAME. Jangan pernah menaruh kunci di kode frontend.
+3. SINKRONISASI REAL TIME MULTI-PERANGKAT (aturan lengkap di BAGIAN 13). Semua data, pengaturan, dan menu wajib sinkron di semua perangkat tanpa refresh halaman. Tampilkan indikator status sinkron (Tersinkron / Menyinkronkan / Offline) di bagian bawah sidebar beserta waktu sinkron terakhir.
+4. Cegah bentrok data: setiap penulisan ke Sheets melalui fungsi writeQueue di server dengan retry dan exponential backoff. Gunakan batch read/write, jangan baca per sel. Karena serverless berjalan di banyak instance, penjagaan duplikat dan kuota TIDAK boleh hanya mengandalkan antrean di memori (lihat BAGIAN 13 poin 5).
+5. Setup otomatis: buat endpoint /api/setup yang membuat semua sheet beserta header kolom bila belum ada, lalu mengisi data awal (password piket awal, password admin awal, pengaturan default, jenis pelanggaran contoh).
+6. SCAN DAN RFID TIDAK MEMAKAI KAMERA. Pembaca barcode/QR USB dan pembaca RFID USB adalah alat tambahan yang bekerja sebagai "keyboard": mereka mengetik kode lalu menekan Enter. Aplikasi cukup menangkap input keyboard tersebut dan memprosesnya OTOMATIS saat Enter diterima, TANPA tombol kirim. Scan dan RFID HANYA dipakai di menu Presensi. Menu Izin Keluar Kelas TIDAK memakai scan/RFID. Jangan memakai html5-qrcode, BarcodeDetector, atau getUserMedia untuk presensi maupun izin keluar kelas.
+7. Kamera HANYA dipakai di menu Pelanggaran untuk foto bukti. Gunakan navigator.mediaDevices.getUserMedia dengan penanganan error lengkap (izin ditolak, kamera tidak ditemukan, kamera dipakai aplikasi lain, bukan HTTPS), tombol pilih kamera depan/belakang, tombol "Coba lagi", pesan petunjuk berbahasa Indonesia, dan hentikan stream saat ditutup (track.stop()). Sediakan juga opsi "Unggah dari galeri" sebagai cadangan.
+8. Kompatibilitas deploy: tulis package.json dengan versi dependency yang saling kompatibel dan pasti (hindari konflik peer dependency/ERESOLVE), sertakan vercel.json, file .env.example, dan README langkah deploy. Pastikan "npm install" dan "npm run build" berhasil tanpa flag tambahan.
+9. Responsif untuk HP, tablet, laptop, dan layar besar. Sidebar berubah menjadi menu geser (drawer) di layar kecil.
+
+==================================================
+BAGIAN 2 - DESAIN UI (MINIMALIS & SIMPLE)
+==================================================
+- Gaya minimalis dan simple: latar polos (putih/abu sangat muda di mode terang, abu gelap pekat di mode gelap), TANPA glassmorphism, TANPA blur/transparansi, TANPA gradient, TANPA bayangan berat. Pakai border tipis 1px berwarna abu lembut dan sudut membulat kecil (6-8px).
+- Banyak ruang kosong (whitespace), tata letak rapi berbasis grid, satu keluarga font sans-serif (misalnya Inter) dengan hierarki ukuran yang jelas, ikon garis tipis (misalnya lucide-react) dan secukupnya saja.
+- Satu warna aksen utama netral (misalnya biru tua atau hitam) untuk tombol dan menu aktif. Warna status hanya dipakai sebagai penanda kecil (titik, lencana, atau teks berwarna): hijau (hadir), biru (izin), kuning (sakit), merah (alpha/pelanggaran/melebihi waktu), oranye (terlambat). Jangan ada warna lain yang mencolok.
+- Layout utama setelah login: SIDEBAR KIRI sederhana (logo, nama sekolah, daftar menu, status sinkron, tombol keluar) dengan latar polos dan garis pemisah tipis, area konten di sebelah kanan. Menu aktif ditandai latar abu lembut atau garis aksen tipis. Hindari animasi berlebihan: cukup transisi singkat, skeleton loading sederhana, dan toast notifikasi kecil.
+- Kartu, tabel, form, kotak pemberitahuan, dan dialog memakai gaya datar yang sama (latar putih/gelap polos + border tipis). Kotak pemberitahuan presensi cukup jelas dan besar dengan penanda warna status di tepi atau lencana, bukan latar penuh yang mencolok.
+- Grafik sederhana: warna seperlunya, tanpa dekorasi, grid tipis, label jelas.
+- Mode terang/gelap.
+
+==================================================
+BAGIAN 3 - ALUR APLIKASI (URUTAN PENGGUNAAN)
+==================================================
+ALUR 1 - MASUK APLIKASI
+1. Layar awal hanya berisi logo, judul "DISIPLIN KITA BISA", SATU kolom input PASSWORD (dengan tombol tampilkan/sembunyikan) dan tombol "Masuk". Tidak ada pilihan peran, tidak ada kolom nama.
+2. Password ini adalah "password piket" yang diatur admin. Siapa pun yang mengetahui password ini dapat menjadi petugas piket presensi.
+3. Bila benar, aplikasi LANGSUNG membuka menu PRESENSI. Bila salah, tampilkan pesan error; setelah 5 kali salah, kunci 5 menit.
+4. Sesi memakai token JWT; masa berlaku diatur admin. Tombol "Keluar" ada di bawah sidebar.
+
+ALUR 2 - NAVIGASI SIDEBAR KIRI
+Urutan menu di sidebar:
+ 1. Presensi (menu pertama dan halaman default setelah login)
+ 2. Izin Keluar Kelas
+ 3. Pelanggaran
+ 4. Dasbor
+ 5. Wali Kelas   (ikon gembok, butuh login tambahan)
+ 6. Kesiswaan    (ikon gembok, butuh login tambahan)
+ 7. Admin        (ikon gembok, butuh login tambahan)
+Menu 1-4 langsung bisa dibuka oleh semua yang sudah login dengan password piket.
+
+ALUR 3 - MENU TERKUNCI (LOGIN TAMBAHAN)
+- Wali Kelas: saat diklik muncul form sederhana berisi: Nama (input), Password (input), dan Pilih Kelas (dropdown dari daftar kelas). Setelah berhasil, menu terbuka HANYA untuk kelas yang dipilih. Admin mengatur akun wali kelas (nama, password, kelas yang boleh diakses). Verifikasi: nama + password cocok dan kelas yang dipilih termasuk kelas milik akun tersebut.
+- Kesiswaan: saat diklik muncul form berisi SATU kolom password kesiswaan (berbeda dari password piket). Setelah berhasil, menu terbuka untuk seluruh sekolah.
+- Admin: saat diklik muncul form berisi password admin (terpisah dari yang lain).
+- Akses tambahan ini berlaku 30 menit sejak aktivitas terakhir lalu terkunci otomatis; tampilkan tombol "Kunci kembali" di halaman tersebut. Pindah ke menu 1-4 tidak mengeluarkan dari sesi utama.
+- Semua password disimpan sebagai hash (bcrypt/scrypt) di server. Pemeriksaan hak akses dilakukan di API (bukan hanya di tampilan).
+
+==================================================
+BAGIAN 4 - MENU 1: PRESENSI (SCAN + RFID TANPA KAMERA, DALAM SATU FRAME)
+==================================================
+Tata letak satu halaman penuh (cocok untuk kiosk di gerbang):
+- Bagian atas: jam digital besar (dari jam server), tanggal, nama SESI AKTIF (contoh: "Masuk Pagi"), jam batas tepat waktu, dan penghitung ringkas (sudah hadir / belum hadir / terlambat).
+- Bagian tengah: SATU frame besar berborder tipis bertuliskan "Tempelkan kartu RFID atau scan barcode/QR kartu siswa". Di dalamnya ada satu input yang SELALU fokus otomatis (tetap fokus walau layar disentuh atau jendela kembali aktif). Input menerima kode dari alat pembaca RFID maupun pembaca barcode, lalu diproses OTOMATIS saat tombol Enter diterima, tanpa tombol kirim. Tampilkan indikator "Siap memindai" (hijau berdenyut).
+- Pencocokan: cari kode di kolom rfid_uid, lalu card_code/NIS di data siswa.
+- Bagian kanan/bawah: daftar presensi terbaru real time (foto kecil, nama, kelas, jam, status).
+Alur setelah scan/tap:
+ 1. Validasi kode (kartu terdaftar?), sesi aktif, dan duplikat.
+ 2. Simpan presensi ke server, status Hadir atau Terlambat (dihitung dari jam sesi + toleransi).
+ 3. Munculkan KOTAK PEMBERITAHUAN sederhana di tengah layar selama 3-5 detik berisi: foto siswa, nama, kelas, jam presensi, status (Hadir / Terlambat + berapa menit), dan pesan (contoh: "Selamat pagi, Ahmad. Kamu hadir tepat waktu.").
+ 4. TEXT-TO-SPEECH: bacakan teks yang SAMA PERSIS dengan kotak pemberitahuan memakai Web Speech API (speechSynthesis, id-ID). Sediakan pengaturan suara, kecepatan, volume, dan tombol aktif/nonaktif. Bila suara id-ID tidak tersedia, pakai suara bawaan terdekat dan tampilkan peringatan.
+ 5. Bunyi beep sukses/gagal, lalu input kembali kosong dan siap menerima scan berikutnya (antrean aman bila beberapa siswa scan beruntun).
+Kondisi khusus (kotak pemberitahuan berwarna berbeda + TTS sesuai teksnya): kartu tidak terdaftar, siswa sudah presensi di sesi ini, di luar jam sesi, siswa berstatus izin/sakit hari ini.
+PRESENSI MANUAL (tombol "Presensi Manual" di bawah frame): kolom ketik nama dengan saran otomatis (autocomplete fuzzy, boleh ketik sebagian nama; tampilkan nama + kelas + foto kecil). Pilih siswa -> pilih status (Hadir/Terlambat/Izin/Sakit/Alpha) -> catatan -> simpan. Ditandai "manual" dan dicatat jam serta perangkatnya. Setelah simpan, tampilkan kotak pemberitahuan + TTS yang sama.
+Tambahan: ubah/hapus presensi yang salah input (dengan alasan, tercatat di log audit), mode layar penuh, dan antrean offline di IndexedDB yang terkirim otomatis saat koneksi kembali.
+
+==================================================
+BAGIAN 5 - MENU 2: IZIN KELUAR KELAS
+==================================================
+Prinsip input: menu ini TIDAK memakai scan barcode/QR maupun RFID (keduanya hanya di menu Presensi). Piket mencari siswa dengan mengetik nama (saran otomatis), lalu memilih jenis izin.
+
+Tata letak: kolom pencarian nama dengan saran otomatis, deretan tombol pilihan jenis izin, panel "Sedang Keluar", dan indikator kuota per kelas.
+
+Alur izin keluar:
+ 1. Piket mengetik nama siswa dengan saran otomatis (autocomplete fuzzy, boleh sebagian nama; tampilkan nama + kelas + foto kecil), lalu memilih siswa.
+ 2. Pilih jenis izin lewat tombol pilihan: BAK = 5 menit, BAB = 10 menit, Keperluan Lain = 2 menit (durasi dapat diubah admin).
+ 3. Tekan tombol "Mulai Izin". Siswa yang sedang berada di luar kelas tidak dapat dimulai lagi sebelum dikonfirmasi kembali.
+ 4. Validasi di SERVER sebelum izin dimulai:
+    a. Kuota maksimal 2 siswa per kelas yang sedang berada di luar kelas bersamaan.
+    b. Satu siswa maksimal 2 kali izin keluar per hari.
+    Bila terlanggar, tampilkan kotak pesan jelas + TTS (contoh: "Kuota kelas 8A sudah penuh, mohon tunggu") dan bunyi beep gagal.
+ 5. Bila lolos: kartu izin muncul di panel "Sedang Keluar" berisi foto kecil, nama, kelas, jenis izin, jam keluar, dan HITUNG MUNDUR real time. Tampilkan kotak pemberitahuan singkat + TTS (contoh: "Ahmad, izin BAK lima menit dimulai"). Kolom pencarian kembali kosong dan siap untuk siswa berikutnya.
+
+Alur kembali ke kelas:
+ 1. Setiap kartu di panel "Sedang Keluar" memiliki IKON CENTANG (ceklis) besar yang bisa diklik sebagai tanda siswa sudah kembali.
+ 2. Saat dikonfirmasi kembali, server mencatat jam kembali, durasi aktual, dan keterlambatan kembali, lalu kartu pindah ke riwayat.
+ 3. Bila waktu izin habis tetapi siswa BELUM dikonfirmasi kembali:
+    - Status kartu berubah "Melebihi Waktu" (merah) + alarm suara + TTS.
+    - Tampil penghitung keterlambatan kembali yang terus bertambah (+menit:detik) mulai dari batas waktu izin.
+    - Keterlambatan berhenti dan dikunci (late_return_minutes) saat ikon centang diklik.
+ 4. Keterlambatan kembali dihitung dari jam server: late_return_minutes = max(0, jam kembali - (jam keluar + durasi izin)), dibulatkan ke atas per menit.
+ 5. Bila siswa tidak pernah dikonfirmasi kembali, izin ditutup otomatis oleh server pada akhir sesi/hari dengan penanda "tidak dikonfirmasi" supaya kuota kelas tidak tersumbat.
+ 6. Piket dapat mengoreksi jam kembali (dengan alasan, tercatat di log audit).
+
+Isi halaman: panel "Sedang Keluar" (real time, sinkron di semua perangkat), indikator kuota per kelas hari ini, riwayat izin hari ini (termasuk kolom keterlambatan kembali), dan rekap (per siswa, per kelas, per hari, siswa yang paling sering keluar, siswa yang paling sering terlambat kembali beserta total menitnya).
+
+==================================================
+BAGIAN 6 - MENU 3: PELANGGARAN
+==================================================
+Alur input:
+ 1. Cari siswa (scan kartu/RFID dengan alat tambahan tanpa kamera, diproses otomatis saat Enter; atau ketik nama dengan saran otomatis).
+ 2. Pilih jenis pelanggaran dari daftar yang dikelola admin (BAGIAN 10 poin 6); kategori dan poin default terisi otomatis. Poin dapat diubah bila admin mengizinkan.
+ 3. Isi catatan, lokasi/kejadian (opsional). Waktu dan nama pencatat terisi otomatis.
+ 4. Tombol "Buka Kamera" untuk foto bukti: preview, ulangi, kompres sebelum upload. Foto disimpan ke Google Drive (folder "pelanggaran"), link tersimpan di sheet. Cadangan: unggah dari galeri.
+ 5. Simpan -> tampil konfirmasi dan total poin siswa saat ini. Bila melewati ambang peringatan (SP1/SP2/dst.), tampilkan peringatan.
+Isi halaman: formulir input, riwayat pelanggaran terbaru, rekap pelanggaran (filter siswa, kelas, tanggal, kategori; total poin; grafik; galeri foto bukti; ekspor Excel/PDF), serta input poin prestasi/penghargaan (poin positif).
+
+==================================================
+BAGIAN 7 - MENU 4: DASBOR
+==================================================
+- Kartu ringkasan hari ini: total siswa, Hadir, Terlambat, Izin, Sakit, Alpha (angka + persentase).
+- Grafik utama (donut + bar) untuk Hadir, Izin, Sakit, Alpha. Filter: hari ini, pekan ini, bulan ini, semester.
+- Drill-down: klik batang/irisan -> daftar per KELAS -> klik kelas -> daftar per SISWA -> klik siswa -> profil siswa (riwayat presensi, izin keluar, pelanggaran, skor disiplin). Sediakan tombol kembali dan breadcrumb.
+- Ranking Terlambat (Top 10 siswa dan Top kelas) berdasarkan jumlah dan total menit keterlambatan.
+- Ranking Terlambat Kembali ke Kelas (Top 10 siswa dan Top kelas) berdasarkan jumlah dan total menit keterlambatan kembali dari izin keluar.
+- Ranking Disiplin (Top 10 siswa dan kelas) dengan rumus skor yang diatur admin: skor = 100 - poin pelanggaran - (keterlambatan x bobot) - (alpha x bobot) - (menit terlambat kembali x bobot, opsional) + bonus kehadiran penuh.
+- Panel "Sedang Keluar Kelas" real time (termasuk status Melebihi Waktu) dan panel aktivitas terbaru.
+- Penghargaan "Siswa Disiplin Pekan Ini".
+
+==================================================
+BAGIAN 8 - MENU 5: WALI KELAS (TERKUNCI: NAMA + PASSWORD + PILIH KELAS)
+==================================================
+Setelah login (Alur 3), tampil halaman khusus kelas yang dipilih dengan tab:
+ 1. Rekap per SISWA: tabel semua siswa kelas (hadir, terlambat, izin, sakit, alpha, poin pelanggaran, skor disiplin) + klik siswa untuk profil.
+ 2. Rekap per HARI: pilih tanggal; daftar status tiap siswa.
+ 3. Rekap per PEKAN: pilih pekan; tabel dan grafik tren.
+ 4. Rekap per BULAN: pilih bulan; tabel kalender kehadiran dan grafik.
+ 5. Rekap per SEMESTER: ringkasan total dan grafik perbandingan antar bulan.
+ 6. Ranking: Ranking Terlambat, Ranking Terlambat Kembali ke Kelas, dan Ranking Disiplin khusus kelas ini.
+ 7. Izin Keluar & Pelanggaran: rekap izin keluar kelas (termasuk keterlambatan kembali) dan pelanggaran siswa kelas (hanya lihat), siswa bermasalah ditandai warna.
+ 8. Persetujuan izin/sakit: menyetujui atau menolak pengajuan izin/sakit siswa kelasnya.
+Setiap tab dilengkapi grafik (garis/bar/donut), filter rentang tanggal, dan ekspor PDF/Excel.
+
+==================================================
+BAGIAN 9 - MENU 6: KESISWAAN (TERKUNCI: PASSWORD KESISWAAN)
+==================================================
+Setelah login (Alur 3), tampil halaman seluruh sekolah dengan tab:
+ 1. Rekap per SISWA (cari siswa mana pun, filter kelas/angkatan).
+ 2. Rekap per HARI, per PEKAN, per BULAN, dan per SEMESTER, masing-masing dengan grafik.
+ 3. Ranking Terlambat, Ranking Terlambat Kembali ke Kelas, dan Ranking Disiplin tingkat siswa, kelas, dan angkatan.
+ 4. Rekap Pelanggaran seluruh sekolah (poin, kategori, foto bukti, filter lengkap) dan kelola surat peringatan.
+ 5. Perbandingan antar kelas (grafik).
+ 6. Laporan resmi: cetak PDF dengan kop sekolah dan ekspor Excel.
+
+==================================================
+BAGIAN 10 - MENU 7: ADMIN (TERKUNCI: PASSWORD ADMIN, BISA MENGATUR SEMUA)
+==================================================
+1. SESI ABSEN: tambah/ubah/hapus sesi (nama sesi, jam mulai, jam batas tepat waktu, jam tutup, hari aktif, toleransi terlambat). Contoh: Masuk Pagi, Salat Dhuha, Salat Zuhur, Pulang.
+2. PERALIHAN OTOMATIS PRESENSI: sesi aktif berganti otomatis sesuai jadwal (berdasarkan jam server) tanpa campur tangan petugas, dengan tombol override manual dan jadwal khusus hari libur/ujian.
+3. DATABASE SISWA:
+   - Tambah, ubah, hapus, cari, filter per kelas.
+   - Tombol "Unduh Template" (.xlsx dan .csv) yang dibuat otomatis oleh aplikasi sehingga pengguna tidak perlu membuat template manual. Template berisi: baris header yang benar (NIS, NISN, nama, kelas, jenis_kelamin, uid_rfid, nama_orang_tua, email_orang_tua), 2-3 baris contoh, dan sheet "Petunjuk" yang menjelaskan format tiap kolom. Daftar kelas diambil dari data kelas di aplikasi.
+   - Tombol "Impor Data": unggah template yang sudah diisi, tampilkan pratinjau dan validasi otomatis (kolom wajib kosong, NIS ganda, UID RFID ganda, format email salah, kelas belum terdaftar). Baris bermasalah diberi warna merah beserta alasannya; hanya baris valid yang diimpor setelah menekan "Konfirmasi Impor".
+   - Tombol "Ekspor Data Siswa" ke Excel.
+   - Cetak kartu siswa (QR/barcode + foto). Registrasi kartu RFID: kursor di kolom UID, tempelkan kartu, UID terisi otomatis.
+4. Kelola kelas, tahun ajaran, semester, hari libur.
+5. KELOLA AKUN DAN PASSWORD: password piket (boleh lebih dari satu, dengan label), akun wali kelas (nama, password, kelas), password kesiswaan, password admin. Tombol reset password dan atur masa berlaku sesi.
+6. JENIS PELANGGARAN DAN POIN (CRUD lengkap):
+   - Tambah, ubah, hapus (nonaktifkan bila sudah dipakai), urutkan.
+   - Kolom: kode, nama, kategori (ringan/sedang/berat), poin default, status aktif/nonaktif, keterangan.
+   - Jenis prestasi/penghargaan dengan poin positif.
+   - Toggle "Izinkan ubah poin saat input".
+   - Ambang peringatan otomatis (contoh: 25 = SP1, 50 = SP2, 75 = panggil orang tua).
+   - Unduh Template dan Impor untuk jenis pelanggaran (kode, nama, kategori, poin) dengan pratinjau dan validasi.
+   - Perubahan poin default hanya berlaku untuk pelanggaran baru.
+   - Bobot rumus skor disiplin (termasuk bobot menit terlambat kembali, dapat dinonaktifkan) serta kuota dan durasi izin keluar (BAK, BAB, Keperluan Lain) juga diatur di sini.
+7. TAMPILAN APLIKASI: warna aksen, logo, nama sekolah, dan mode terang/gelap bawaan. Latar bawaan polos; admin boleh mengunggah gambar latar (disimpan ke Drive) dengan overlay otomatis agar teks tetap terbaca.
+8. Pengaturan TTS: template kalimat yang dapat diedit dengan variabel {nama}, {kelas}, {status}, {jam}.
+9. Notifikasi email (BAGIAN 11), backup dan restore data, log audit (siapa mengubah apa dan kapan), reset data per semester, dan halaman Status Sinkronisasi (BAGIAN 13).
+10. Feature toggle untuk setiap modul.
+
+==================================================
+BAGIAN 11 - FITUR TAMBAHAN
+==================================================
+- NOTIFIKASI EMAIL KE ORANG TUA (opsional):
+  a. Bawaan NONAKTIF. Admin mengaktifkannya lewat saklar "Aktifkan Notifikasi Email". Bila nonaktif, tidak ada email terkirim.
+  b. Admin memilih pemicu: terlambat, alpha, izin/sakit, pelanggaran baru, melewati ambang peringatan, melebihi waktu izin keluar kelas (terlambat kembali).
+  c. Template email dapat diedit (subjek dan isi) dengan variabel {nama_siswa}, {kelas}, {tanggal}, {jam}, {status}, {pelanggaran}, {poin}, {menit_terlambat_kembali}, {nama_sekolah}.
+  d. Kirim di server lewat SMTP (Nodemailer) dengan antrean, retry, batas jumlah per menit, dan pencegahan email ganda.
+  e. Siswa tanpa email orang tua dilewati dan ditandai di log.
+  f. Tombol "Kirim Email Uji Coba" dan halaman "Log Notifikasi" (waktu, siswa, penerima, jenis, status, pesan error).
+  g. Kegagalan email tidak boleh menghambat presensi, izin keluar, atau pelanggaran.
+- Pengajuan izin/sakit dengan unggah surat (dari galeri/berkas), disetujui wali kelas.
+- Pencarian global siswa.
+- Ekspor/cetak PDF dan Excel di setiap rekap.
+- Halaman profil siswa lengkap.
+- Mode layar penuh (kiosk) untuk presensi.
+- Panduan penggunaan singkat di dalam aplikasi.
+
+==================================================
+BAGIAN 12 - STRUKTUR GOOGLE SHEETS
+==================================================
+Buat sheet: users, students, classes, sessions, attendance, leave_requests, out_of_class, violation_types, violations, settings, notification_settings, notification_log, audit_log, changes, meta.
+- users: id, role (duty/homeroom/student_affairs/admin), name, class_id, password_hash, label, token_version, is_active.
+- students: nis, nisn, name, class_id, gender, rfid_uid, card_code, photo_url, parent_name, parent_email.
+- violation_types: code, name, category, default_points, is_active, description.
+- out_of_class: student_id, class_id, type (BAK/BAB/OTHER), duration_minutes, started_at, due_at, returned_at, actual_minutes, late_return_minutes, return_method (click/manual/auto_closed), status (active/overdue/returned/auto_closed).
+- changes: id, version, entity, entity_id, action, changed_at.
+Setiap baris punya id unik (UUID), created_at, updated_at, dan version. Tulis header kolom secara eksplisit di kode setup.
+
+==================================================
+BAGIAN 13 - SINKRONISASI MENYELURUH (WAJIB)
+==================================================
+Prinsip: Google Sheets adalah satu-satunya sumber kebenaran. Semua perangkat hanya menampilkan salinan data dari server. Tidak ada data penting yang hanya disimpan di satu perangkat.
+
+1. CAKUPAN SINKRON. Setiap perubahan berikut harus muncul di semua perangkat yang sedang terbuka dalam maksimal sekitar 3-5 detik, tanpa refresh:
+   - Presensi (scan, RFID, manual, ubah/hapus) beserta penghitung hadir/terlambat dan daftar terbaru.
+   - Izin keluar kelas (mulai, kembali, melebihi waktu, keterlambatan kembali, sisa kuota per kelas, jumlah izin per siswa hari ini).
+   - Pelanggaran dan poin, termasuk foto bukti.
+   - Dasbor, grafik, ranking, rekap wali kelas dan kesiswaan.
+   - Data siswa, kelas, jenis pelanggaran dan poin, sesi absen, dan jadwal peralihan otomatis.
+   - Pengaturan admin: background, logo, nama sekolah, warna, TTS, feature toggle, notifikasi email.
+   - Akun dan password: bila admin mengubah/menghapus akun atau password, sesi lama di perangkat lain otomatis keluar (gunakan field token_version pada user).
+2. MEKANISME DELTA. Setiap penulisan menaikkan counter version di sheet "meta" dan menambah satu baris di sheet "changes". Klien menyimpan version terakhir dan memanggil /api/sync?since=<version>; server hanya mengembalikan perubahan setelah version itu (bukan seluruh data). Bila klien tertinggal terlalu jauh atau baru dibuka, lakukan muat ulang penuh (full snapshot). Pangkas baris "changes" lama secara berkala.
+3. HEMAT KUOTA GOOGLE SHEETS:
+   - Endpoint /api/sync memberi header Cache-Control: public, s-maxage=2, stale-while-revalidate=5 agar banyak perangkat berbagi satu hasil dan Sheets hanya dibaca sekali per beberapa detik.
+   - Server menyimpan cache singkat (TTL 2-3 detik) untuk data yang sering dibaca.
+   - Polling adaptif: 3 detik saat tab aktif, 15 detik saat tab tersembunyi atau layar mati, langsung sinkron saat tab kembali aktif (visibilitychange) dan saat koneksi kembali (event online).
+   - Jangan membaca ulang seluruh sheet pada setiap permintaan. Gunakan batch get dan range terbatas.
+4. PEMBARUAN TANPA MENGGANGGU. Saat data baru tiba, perbarui tampilan di tempat (React state) tanpa memuat ulang halaman dan tanpa menghapus isian form yang sedang diketik. Kotak pemberitahuan presensi, TTS, dan hitung mundur izin keluar tidak boleh terputus oleh sinkronisasi.
+5. ANTI BENTROK (karena banyak perangkat menulis bersamaan):
+   - Presensi: kunci keunikan (student_id + session_id + tanggal). Setelah menambah baris, server membaca ulang kunci tersebut; bila ada lebih dari satu baris, pertahankan yang paling awal dan hapus sisanya, lalu kembalikan hasil "sudah presensi" ke perangkat yang kalah.
+   - Kuota izin keluar (maks. 2 siswa per kelas keluar bersamaan, maks. 2 kali per siswa per hari): setelah menambah baris, server memverifikasi ulang jumlah izin aktif kelas dan jumlah izin siswa hari itu. Bila melebihi batas, baris yang masuk paling akhir dibatalkan otomatis dan perangkat tersebut menerima pesan kuota penuh.
+   - Konfirmasi kembali dari izin keluar (klik ikon centang) memakai idempotency key dan hanya berlaku sekali. Bila dua perangkat mengonfirmasi bersamaan, yang pertama dipakai (jam kembali dan late_return_minutes dari konfirmasi pertama) dan yang kedua menerima hasil "sudah kembali".
+   - Ubah data: gunakan field version/updated_at pada setiap baris. Bila dua orang mengubah baris yang sama, tolak penulisan yang usang dan tampilkan data terbaru kepada pengguna.
+   - Setiap permintaan tulis membawa idempotency key (UUID dari klien) agar pengiriman ulang tidak membuat data ganda.
+6. JAM SERVER SEBAGAI ACUAN. Status terlambat, sesi aktif, peralihan otomatis, hitung mundur izin keluar, dan penghitung keterlambatan kembali dihitung dari jam server, bukan jam perangkat. Klien menghitung selisih waktu (clock offset) saat memuat dan menyesuaikan jam tampilannya. Hitung mundur dan penghitung keterlambatan dihitung dari waktu mulai/batas yang tersimpan di server sehingga sama di semua perangkat.
+7. OFFLINE. Bila koneksi putus, tampilkan status Offline, simpan antrean tulis di IndexedDB (lengkap dengan idempotency key dan waktu kejadian), lalu kirim otomatis berurutan saat online. Data yang dikirim ulang tetap melewati validasi server (duplikat dan kuota), dan perangkat menerima hasil akhirnya. Tampilkan jumlah antrean yang belum terkirim.
+8. INDIKATOR DAN PEMULIHAN. Bila sinkron gagal berulang, tampilkan banner "Koneksi bermasalah, mencoba lagi" dengan tombol "Sinkron Sekarang". Admin mendapat halaman "Status Sinkronisasi" (version terakhir, jumlah perangkat aktif, error terakhir).
+9. PENGUJIAN MANDIRI. Sediakan halaman uji di menu Admin untuk mensimulasikan dua perangkat menulis bersamaan (presensi duplikat, rebutan kuota izin keluar, dan konfirmasi kembali ganda) dan menampilkan hasilnya.
+
+==================================================
+BAGIAN 14 - URUTAN PENGERJAAN
+==================================================
+Kerjakan berurutan: (1) struktur proyek + konfigurasi deploy, (2) setup Sheets/Drive + layer API, (3) autentikasi: login password piket, login tambahan wali kelas/kesiswaan/admin, (4) sistem sinkron real time sesuai BAGIAN 13, (5) layout sidebar kiri + komponen UI minimalis, (6) Menu Presensi (scan/RFID tanpa kamera + TTS), (7) Izin Keluar Kelas (pencarian nama, ikon centang kembali, keterlambatan kembali), (8) Pelanggaran (dengan kamera bukti), (9) Dasbor, (10) Wali Kelas, (11) Kesiswaan, (12) Admin termasuk unduh template dan impor, (13) notifikasi email dan log, (14) fitur tambahan, (15) README.
+Setelah selesai, periksa sendiri: tidak ada error build, tidak ada import yang hilang, setelah login langsung masuk ke menu Presensi, sidebar kiri menampilkan semua menu, menu terkunci meminta kredensial yang benar, presensi dan izin keluar tidak memanggil kamera sama sekali, unduh template dan impor berjalan dengan data contoh, dan tidak ada data dummy tersisa selain data contoh yang bisa dihapus admin. Pastikan juga: perubahan di satu perangkat muncul di perangkat lain dalam beberapa detik untuk semua menu dan pengaturan, tidak ada presensi ganda saat dua perangkat memindai bersamaan, kuota izin keluar tidak bisa terlewati saat dua perangkat mengajukan bersamaan, scan/RFID di menu Presensi berjalan otomatis tanpa tombol kirim, menu Izin Keluar tidak memakai scan, ikon centang kembali berfungsi, dan penghitung keterlambatan kembali berjalan sama di semua perangkat serta berhenti saat siswa dikonfirmasi kembali.

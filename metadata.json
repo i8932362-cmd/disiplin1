@@ -1,0 +1,6 @@
+{
+  "name": "DISIPLIN KITA BISA",
+  "description": "Aplikasi presensi dan kedisiplinan siswa sekolah dengan sistem scan/RFID instan, izin keluar kelas berkuota, pencatatan pelanggaran, rekap real time, dan sinkronisasi multi-perangkat.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "allowJs": true,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["../*"]
+    },
+    "noEmit": true
+  },
+  "include": ["./**/*", "../server/**/*"]
+}
