@@ -94,6 +94,8 @@ interface AppContextType {
 
   saveStudent: (student: Student) => Promise<boolean>;
   deleteStudent: (nis: string) => Promise<boolean>;
+  deleteStudents: (nisses: string[]) => Promise<boolean>;
+  clearAllStudents: () => Promise<boolean>;
   batchImportStudents: (students: Student[]) => Promise<{ success: boolean; added: number; updated: number }>;
 
   saveClass: (cls: SchoolClass) => Promise<boolean>;
@@ -1344,6 +1346,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteStudents = async (nisses: string[]) => {
+    try {
+      const res = await fetch('/api/students', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.token}`,
+        },
+        body: JSON.stringify({ nisses }),
+      });
+      if (res.ok) {
+        showToast(`${nisses.length} data siswa berhasil dihapus.`, 'success');
+        syncNow();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const clearAllStudents = async () => {
+    try {
+      const res = await fetch('/api/students', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.token}`,
+        },
+        body: JSON.stringify({ action: 'clear_all' }),
+      });
+      if (res.ok) {
+        showToast('Semua data siswa berhasil dihapus dan dikosongkan.', 'success');
+        syncNow();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const batchImportStudents = async (newStudents: Student[]) => {
     try {
       const res = await fetch('/api/students?action=batch_import', {
@@ -1671,6 +1715,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteViolation,
         saveStudent,
         deleteStudent,
+        deleteStudents,
+        clearAllStudents,
         batchImportStudents,
         saveClass,
         deleteClass,

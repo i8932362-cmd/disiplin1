@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sliders,
   Users,
@@ -65,6 +65,8 @@ export const AdminView: React.FC = () => {
     students,
     saveStudent,
     deleteStudent,
+    deleteStudents,
+    clearAllStudents,
     batchImportStudents,
     classes,
     saveClass,
@@ -113,6 +115,11 @@ export const AdminView: React.FC = () => {
   const [importRows, setImportRows] = useState<StudentImportRow[] | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [printCardStudent, setPrintCardStudent] = useState<Student | null>(null);
+  const [selectedStudentNis, setSelectedStudentNis] = useState<Set<string>>(new Set());
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [studentClassFilter, setStudentClassFilter] = useState('all');
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
   // Session CRUD state
   const [editingSession, setEditingSession] = useState<Partial<AttendanceSession> | null>(null);
@@ -430,6 +437,71 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  // Student filtering & bulk deletion handlers
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      const matchClass = studentClassFilter === 'all' || s.class_id.toLowerCase() === studentClassFilter.toLowerCase();
+      const matchQuery =
+        !studentSearchQuery.trim() ||
+        s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
+        s.nis.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
+        (s.rfid_uid && s.rfid_uid.toLowerCase().includes(studentSearchQuery.toLowerCase()));
+      return matchClass && matchQuery;
+    });
+  }, [students, studentClassFilter, studentSearchQuery]);
+
+  const toggleSelectAllStudents = () => {
+    if (selectedStudentNis.size === filteredStudents.length && filteredStudents.length > 0) {
+      setSelectedStudentNis(new Set());
+    } else {
+      setSelectedStudentNis(new Set(filteredStudents.map((s) => s.nis)));
+    }
+  };
+
+  const toggleSelectStudent = (nis: string) => {
+    setSelectedStudentNis((prev) => {
+      const next = new Set(prev);
+      if (next.has(nis)) next.delete(nis);
+      else next.add(nis);
+      return next;
+    });
+  };
+
+  const handleDeleteSelectedStudents = async () => {
+    if (selectedStudentNis.size === 0) return;
+    if (!window.confirm(`Yakin ingin menghapus ${selectedStudentNis.size} data siswa terpilih? Tindakan ini tidak dapat dibatalkan.`)) {
+      return;
+    }
+    setIsDeletingBulk(true);
+    try {
+      const ok = await deleteStudents(Array.from(selectedStudentNis));
+      if (ok) {
+        setSelectedStudentNis(new Set());
+        if (googleSheetsConnected && settings.google_sheet_id) {
+          syncGoogleSheetsNow().catch(() => {});
+        }
+      }
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
+  const handleConfirmClearAllStudents = async () => {
+    setIsDeletingBulk(true);
+    try {
+      const ok = await clearAllStudents();
+      if (ok) {
+        setIsClearAllModalOpen(false);
+        setSelectedStudentNis(new Set());
+        if (googleSheetsConnected && settings.google_sheet_id) {
+          syncGoogleSheetsNow().catch(() => {});
+        }
+      }
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
   // --- SELF-TEST CONCURRENCY SIMULATION (Bagian 13 Poin 9) ---
   const runSelfTest = async (testType: 'duplicate_attendance' | 'out_of_class_quota_race') => {
     setSimulationRunning(true);
@@ -521,9 +593,9 @@ export const AdminView: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div>
               <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                Basis Data Siswa ({students.length} Siswa)
+                Basis Data Siswa ({students.length} Siswa Terdaftar)
               </h2>
-              <p className="text-slate-500">Unduh template otomatis, registrasi RFID instan, dan impor Excel.</p>
+              <p className="text-slate-500">Unduh template otomatis, deteksi nama/kelas instan, seleksi massal, dan hapus data siswa.</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -580,11 +652,83 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
+          {/* Search, Filter, and Bulk Action Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <input
+                type="text"
+                value={studentSearchQuery}
+                onChange={(e) => setStudentSearchQuery(e.target.value)}
+                placeholder="Cari nama siswa, NIS, atau RFID..."
+                className="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-full sm:w-64 focus:ring-1 focus:ring-slate-900"
+              />
+              <select
+                value={studentClassFilter}
+                onChange={(e) => setStudentClassFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium"
+              >
+                <option value="all">Semua Kelas ({students.length})</option>
+                {classes.map((c) => {
+                  const count = students.filter((s) => s.class_id.toLowerCase() === c.id.toLowerCase()).length;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+              {studentSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setStudentSearchQuery('')}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              {selectedStudentNis.size > 0 && (
+                <button
+                  type="button"
+                  disabled={isDeletingBulk}
+                  onClick={handleDeleteSelectedStudents}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-semibold transition-colors shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus ({selectedStudentNis.size}) Siswa Terpilih</span>
+                </button>
+              )}
+
+              {students.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsClearAllModalOpen(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold transition-colors"
+                  title="Hapus dan kosongkan seluruh data siswa"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Kosongkan Semua Siswa</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Students Table */}
           <div className="overflow-x-auto text-xs">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                  <th className="w-8 py-2.5 px-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredStudents.length > 0 && selectedStudentNis.size === filteredStudents.length}
+                      onChange={toggleSelectAllStudents}
+                      className="rounded border-slate-300 text-slate-900 cursor-pointer"
+                      title="Pilih / Batalkan semua siswa di tampilan"
+                    />
+                  </th>
                   <th className="py-2.5">NIS</th>
                   <th className="py-2.5">Nama Siswa</th>
                   <th className="py-2.5">Kelas</th>
@@ -596,52 +740,85 @@ export const AdminView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {students.map((s) => (
-                  <tr key={s.nis} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2 font-mono text-[11px] text-slate-400">{s.nis}</td>
-                    <td className="py-2 font-semibold text-slate-900 dark:text-white">{s.name}</td>
-                    <td className="py-2 text-slate-500">{s.class_id}</td>
-                    <td className="py-2">{s.gender}</td>
-                    <td className="py-2 font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                      {s.rfid_uid}
-                    </td>
-                    <td className="py-2 text-slate-500 truncate max-w-[150px]">
-                      {s.parent_name || '-'} {s.parent_email ? `(${s.parent_email})` : ''}
-                    </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() => setPrintCardStudent(s)}
-                        className="text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span>Cetak</span>
-                      </button>
-                    </td>
-                    <td className="py-2 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setEditingStudent(s)}
-                          className="p-1 text-slate-400 hover:text-slate-600"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Yakin ingin menghapus siswa ${s.name}?`)) {
-                              deleteStudent(s.nis);
-                            }
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-600"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                      {students.length === 0
+                        ? 'Belum ada data siswa. Silakan impor dari Excel atau tambah secara manual.'
+                        : 'Tidak ada data siswa yang cocok dengan filter atau pencarian Anda.'}
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredStudents.map((s) => {
+                    const isSelected = selectedStudentNis.has(s.nis);
+                    return (
+                      <tr
+                        key={s.nis}
+                        className={`transition-colors ${
+                          isSelected
+                            ? 'bg-rose-50/50 dark:bg-rose-950/20'
+                            : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                        }`}
+                      >
+                        <td className="py-2 px-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectStudent(s.nis)}
+                            className="rounded border-slate-300 text-slate-900 cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-2 font-mono text-[11px] text-slate-400">{s.nis}</td>
+                        <td className="py-2 font-semibold text-slate-900 dark:text-white">{s.name}</td>
+                        <td className="py-2 text-slate-500">{s.class_id}</td>
+                        <td className="py-2">{s.gender}</td>
+                        <td className="py-2 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                          {s.rfid_uid}
+                        </td>
+                        <td className="py-2 text-slate-500 truncate max-w-[150px]">
+                          {s.parent_name || '-'} {s.parent_email ? `(${s.parent_email})` : ''}
+                        </td>
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            onClick={() => setPrintCardStudent(s)}
+                            className="text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Cetak</span>
+                          </button>
+                        </td>
+                        <td className="py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingStudent(s)}
+                              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                              title="Edit Siswa / Ubah Nama"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm(`Yakin ingin menghapus nama dan data siswa "${s.name}" (NIS: ${s.nis})?`)) {
+                                  const ok = await deleteStudent(s.nis);
+                                  if (ok && googleSheetsConnected && settings.google_sheet_id) {
+                                    syncGoogleSheetsNow().catch(() => {});
+                                  }
+                                }
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-600"
+                              title="Hapus Siswa Ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -2424,27 +2601,89 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800">
+              {editingStudent.nis && students.some((s) => s.nis === editingStudent.nis) ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm(`Hapus siswa ${editingStudent.name} (${editingStudent.nis})? Tindakan ini tidak dapat dibatalkan.`)) {
+                      await deleteStudent(editingStudent.nis!);
+                      setEditingStudent(null);
+                      if (googleSheetsConnected && settings.google_sheet_id) {
+                        syncGoogleSheetsNow().catch(() => {});
+                      }
+                    }
+                  }}
+                  className="px-2.5 py-1.5 rounded text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold flex items-center gap-1.5 transition-colors text-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Siswa</span>
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingStudent(null)}
+                  className="px-3 py-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingStudent.nis || !editingStudent.name) {
+                      showToast('NIS dan Nama wajib diisi.', 'error');
+                      return;
+                    }
+                    await saveStudent(editingStudent as Student);
+                    setEditingStudent(null);
+                  }}
+                  className="px-4 py-1.5 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold transition-colors"
+                >
+                  Simpan Data Siswa
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI KOSONGKAN SEMUA SISWA */}
+      {isClearAllModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 shadow-2xl text-xs space-y-3">
+            <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-bold text-sm">
+              <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-950 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-4 h-4" />
+              </div>
+              <span>Kosongkan Semua Data Siswa?</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              Tindakan ini akan <strong>menghapus seluruh {students.length} data siswa</strong> dari database dan mencatat perubahan sinkronisasi. Seluruh data nama, NIS, kelas, dan UID kartu RFID siswa akan dibersihkan.
+            </p>
+            <p className="text-slate-500 text-[11px]">
+              Pastikan Anda sudah mengunduh berkas cadangan melalui tombol "Ekspor Excel" jika data ini masih dibutuhkan.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => setEditingStudent(null)}
-                className="px-3 py-1.5 text-slate-600"
+                disabled={isDeletingBulk}
+                onClick={() => setIsClearAllModalOpen(false)}
+                className="px-3 py-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
               >
                 Batal
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  if (!editingStudent.nis || !editingStudent.name) {
-                    showToast('NIS dan Nama wajib diisi.', 'error');
-                    return;
-                  }
-                  await saveStudent(editingStudent as Student);
-                  setEditingStudent(null);
-                }}
-                className="px-4 py-1.5 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold"
+                disabled={isDeletingBulk}
+                onClick={handleConfirmClearAllStudents}
+                className="px-4 py-1.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
               >
-                Simpan Data Siswa
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingBulk ? 'Menghapus...' : 'Ya, Kosongkan Semua'}</span>
               </button>
             </div>
           </div>

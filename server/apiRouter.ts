@@ -744,9 +744,20 @@ export async function handleApiRoute(req: ApiRequest): Promise<ApiResponse> {
       }
 
       if (method === 'DELETE') {
-        const { nis } = req.body;
-        const success = await storage.deleteStudent(nis);
-        return JsonResponse.ok({ success });
+        const { nis, nisses, action } = req.body || {};
+        if (action === 'clear_all') {
+          const count = await storage.clearAllStudents();
+          return JsonResponse.ok({ success: true, count, message: `${count} data siswa berhasil dihapus/dikosongkan.` });
+        }
+        if (Array.isArray(nisses) && nisses.length > 0) {
+          const count = await storage.deleteStudents(nisses);
+          return JsonResponse.ok({ success: true, count, message: `${count} siswa berhasil dihapus.` });
+        }
+        if (nis) {
+          const success = await storage.deleteStudent(nis);
+          return JsonResponse.ok({ success });
+        }
+        return JsonResponse.badRequest('Parameter nis, nisses, atau action diperlukan.');
       }
     }
 

@@ -441,6 +441,30 @@ class StorageManager {
     });
   }
 
+  public async deleteStudents(nisses: string[]): Promise<number> {
+    return this.mutate((db) => {
+      const set = new Set(nisses);
+      const initialCount = db.students.length;
+      db.students = db.students.filter((s) => !set.has(s.nis));
+      for (const nis of nisses) {
+        this.recordChange(db, 'students', nis, 'delete');
+      }
+      return initialCount - db.students.length;
+    });
+  }
+
+  public async clearAllStudents(): Promise<number> {
+    return this.mutate((db) => {
+      const count = db.students.length;
+      const allNis = db.students.map((s) => s.nis);
+      db.students = [];
+      for (const nis of allNis) {
+        this.recordChange(db, 'students', nis, 'delete');
+      }
+      return count;
+    });
+  }
+
   // --- CLASSES ---
   public async getClasses(): Promise<SchoolClass[]> {
     const db = await this.loadDb();
