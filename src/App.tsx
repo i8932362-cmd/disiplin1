@@ -1,16 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext.js';
 import { Sidebar } from './components/layout/Sidebar.js';
 import { Header } from './components/layout/Header.js';
 import { DutyLoginScreen, SecondaryUnlockModal } from './components/modals/AuthLoginModal.js';
-import { AttendanceView } from './views/AttendanceView.js';
-import { OutOfClassView } from './views/OutOfClassView.js';
-import { ViolationsView } from './views/ViolationsView.js';
-import { DashboardView } from './views/DashboardView.js';
-import { HomeroomView } from './views/HomeroomView.js';
-import { StudentAffairsView } from './views/StudentAffairsView.js';
-import { AdminView } from './views/AdminView.js';
 import { CheckCircle2, AlertCircle, Info, X, Lock } from 'lucide-react';
+
+// Lazy-loaded views for instant initial load time and code-splitting
+const DashboardView = React.lazy(() => import('./views/DashboardView.js').then((m) => ({ default: m.DashboardView })));
+const AttendanceView = React.lazy(() => import('./views/AttendanceView.js').then((m) => ({ default: m.AttendanceView })));
+const OutOfClassView = React.lazy(() => import('./views/OutOfClassView.js').then((m) => ({ default: m.OutOfClassView })));
+const ViolationsView = React.lazy(() => import('./views/ViolationsView.js').then((m) => ({ default: m.ViolationsView })));
+const HomeroomView = React.lazy(() => import('./views/HomeroomView.js').then((m) => ({ default: m.HomeroomView })));
+const StudentAffairsView = React.lazy(() => import('./views/StudentAffairsView.js').then((m) => ({ default: m.StudentAffairsView })));
+const AdminView = React.lazy(() => import('./views/AdminView.js').then((m) => ({ default: m.AdminView })));
+
+const ViewLoadingSkeleton: React.FC = () => (
+  <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto animate-pulse">
+    <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded-lg w-1/4 mb-4" />
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="h-20 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+      ))}
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="h-64 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+      <div className="lg:col-span-2 h-64 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+    </div>
+  </div>
+);
 
 const LockedRolePlaceholder: React.FC<{
   role: 'homeroom' | 'student_affairs' | 'admin';
@@ -73,42 +90,44 @@ const MainAppContent: React.FC = () => {
         {/* Sticky Header */}
         <Header onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
-        {/* Dynamic View Content */}
+        {/* Dynamic View Content wrapped in Suspense for zero blank screen */}
         <main className="flex-1 pb-12">
-          {activeTab === 'dashboard' && <DashboardView />}
-          {activeTab === 'attendance' && <AttendanceView />}
-          {activeTab === 'out_of_class' && <OutOfClassView />}
-          {activeTab === 'violations' && <ViolationsView />}
-          {activeTab === 'homeroom' && (
-            session?.lockedMenuRole === 'homeroom' ? (
-              <HomeroomView />
-            ) : (
-              <LockedRolePlaceholder
-                role="homeroom"
-                onUnlock={() => setUnlockRole('homeroom')}
-              />
-            )
-          )}
-          {activeTab === 'student_affairs' && (
-            session?.lockedMenuRole === 'student_affairs' ? (
-              <StudentAffairsView />
-            ) : (
-              <LockedRolePlaceholder
-                role="student_affairs"
-                onUnlock={() => setUnlockRole('student_affairs')}
-              />
-            )
-          )}
-          {activeTab === 'admin' && (
-            session?.lockedMenuRole === 'admin' ? (
-              <AdminView />
-            ) : (
-              <LockedRolePlaceholder
-                role="admin"
-                onUnlock={() => setUnlockRole('admin')}
-              />
-            )
-          )}
+          <Suspense fallback={<ViewLoadingSkeleton />}>
+            {activeTab === 'dashboard' && <DashboardView />}
+            {activeTab === 'attendance' && <AttendanceView />}
+            {activeTab === 'out_of_class' && <OutOfClassView />}
+            {activeTab === 'violations' && <ViolationsView />}
+            {activeTab === 'homeroom' && (
+              session?.lockedMenuRole === 'homeroom' ? (
+                <HomeroomView />
+              ) : (
+                <LockedRolePlaceholder
+                  role="homeroom"
+                  onUnlock={() => setUnlockRole('homeroom')}
+                />
+              )
+            )}
+            {activeTab === 'student_affairs' && (
+              session?.lockedMenuRole === 'student_affairs' ? (
+                <StudentAffairsView />
+              ) : (
+                <LockedRolePlaceholder
+                  role="student_affairs"
+                  onUnlock={() => setUnlockRole('student_affairs')}
+                />
+              )
+            )}
+            {activeTab === 'admin' && (
+              session?.lockedMenuRole === 'admin' ? (
+                <AdminView />
+              ) : (
+                <LockedRolePlaceholder
+                  role="admin"
+                  onUnlock={() => setUnlockRole('admin')}
+                />
+              )
+            )}
+          </Suspense>
         </main>
       </div>
 

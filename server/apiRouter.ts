@@ -290,9 +290,15 @@ export async function handleApiRoute(req: ApiRequest): Promise<ApiResponse> {
     if (pathname === '/api/sync') {
       const sinceVer = parseInt(query.since || '0', 10);
       const syncResult = await storage.getSyncData(sinceVer);
-      return JsonResponse.ok(syncResult, {
-        'Cache-Control': 'public, s-maxage=2, stale-while-revalidate=5',
-      });
+      return JsonResponse.ok(
+        {
+          ...syncResult,
+          googleSheetsConnected: storage.isSheetsConnected(),
+        },
+        {
+          'Cache-Control': 'public, s-maxage=2, stale-while-revalidate=5',
+        }
+      );
     }
 
     // 4. ATTENDANCE: /api/attendance

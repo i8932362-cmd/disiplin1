@@ -42,6 +42,8 @@ interface AppContextType {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   syncStatus: SyncStatus;
+  isInitialLoading: boolean;
+  initialLoadError: string | null;
   lastSyncTime: Date | null;
   currentServerTime: Date;
   activeSession: AttendanceSession | null;
@@ -271,6 +273,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Toasts
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('dkb_cache_classes');
+      return !cached;
+    } catch {
+      return false;
+    }
+  });
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
+  const hasSyncedOnceRef = useRef(false);
+
   const isSyncingRef = useRef(false);
   const versionRef = useRef(0);
   versionRef.current = serverVersion;
@@ -457,21 +470,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [session, showToast]);
 
-  // Delta Sync Call
+  // Delta Sync Call with Timeout & Safe Retry
   const syncNow = useCallback(async () => {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     setSyncStatus('syncing');
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s safe timeout
+
     try {
       let since = versionRef.current;
-      // If client has no classes or students in local state, force full snapshot from server
-      if (classes.length === 0 || students.length === 0) {
+      // Only force full snapshot (since=0) on the very first sync if local cache has no classes
+      if (!hasSyncedOnceRef.current && (classes.length === 0 || versionRef.current === 0)) {
         since = 0;
       }
 
       const res = await fetch(`/api/sync?since=${since}`, {
         headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -479,10 +496,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const data = await res.json();
+      hasSyncedOnceRef.current = true;
 
       // Update Clock Offset
       if (data.serverTime) {
         setServerClockOffset(data.serverTime);
+      }
+
+      if (data.googleSheetsConnected !== undefined) {
+        setGoogleSheetsConnected(data.googleSheetsConnected);
       }
 
       // Flush offline queue if back online
@@ -567,30 +589,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       setSyncStatus('synced');
       setLastSyncTime(new Date());
-    } catch (err) {
+      setInitialLoadError(null);
+    } catch (err: any) {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         setSyncStatus('offline');
       } else {
         setSyncStatus('error');
       }
+      if (classes.length === 0) {
+        setInitialLoadError('Gagal memuat data dari server. Mode offline lokal tetap aktif.');
+      }
     } finally {
+      clearTimeout(timeoutId);
       isSyncingRef.current = false;
+      setIsInitialLoading(false);
     }
-  }, [session, applyDeltaChanges]);
+  }, [session, applyDeltaChanges, classes.length]);
 
-  // Initial Setup and Sync Check
+  // Initial Sync on Mount (Instant and non-blocking)
   useEffect(() => {
-    fetch('/api/setup')
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.googleSheetsConnected !== undefined) {
-          setGoogleSheetsConnected(res.googleSheetsConnected);
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        syncNow();
-      });
+    syncNow();
   }, [syncNow]);
 
   // Adaptive Multi-Device Polling & Cross-Tab Broadcast Synchronization
@@ -613,8 +631,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const setupInterval = () => {
       if (intervalId) clearInterval(intervalId);
       const isVisible = document.visibilityState === 'visible';
-      // Fast 2s polling for active clients, 8s when in background
-      const delay = isVisible ? 2000 : 8000;
+      // 10s polling for active clients (reduced from aggressive 2s to optimize Vercel serverless load), 30s when in background
+      const delay = isVisible ? 10000 : 30000;
       intervalId = setInterval(() => {
         syncNow();
       }, delay);
@@ -1674,6 +1692,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeTab,
         setActiveTab,
         syncStatus,
+        isInitialLoading,
+        initialLoadError,
         lastSyncTime,
         currentServerTime,
         activeSession,
