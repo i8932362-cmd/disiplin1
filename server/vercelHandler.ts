@@ -11,6 +11,9 @@ export async function handleVercelRequest(req: any, res: any) {
 
   const response = await handleApiRoute(apiReq);
 
+  // Default no-store cache header to prevent Edge / CDN stale caching across multiple devices
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
   if (response.headers) {
     for (const [k, v] of Object.entries(response.headers)) {
       res.setHeader(k, v);

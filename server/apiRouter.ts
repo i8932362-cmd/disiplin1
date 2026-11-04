@@ -286,7 +286,7 @@ export async function handleApiRoute(req: ApiRequest): Promise<ApiResponse> {
     }
 
     // 3. SYNC: /api/sync?since=<version>
-    // Bagian 13 Poin 2 & 3: Cache-Control: public, s-maxage=2, stale-while-revalidate=5
+    // Real-time multi-device synchronization: no-store / no-cache to avoid stale CDN responses
     if (pathname === '/api/sync') {
       const sinceVer = parseInt(query.since || '0', 10);
       const syncResult = await storage.getSyncData(sinceVer);
@@ -296,7 +296,9 @@ export async function handleApiRoute(req: ApiRequest): Promise<ApiResponse> {
           googleSheetsConnected: storage.isSheetsConnected(),
         },
         {
-          'Cache-Control': 'public, s-maxage=2, stale-while-revalidate=5',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         }
       );
     }

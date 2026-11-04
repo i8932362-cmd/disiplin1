@@ -28,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     settings,
     updateSettings,
     googleSheetsConnected,
+    syncStatus,
+    syncNow,
   } = useApp();
 
   const isLockedMenuOpen = Boolean(session?.lockedMenuRole);
@@ -71,6 +73,50 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
 
       {/* Right: Server Clock, Kiosk mode, Audio toggle, Lock indicator */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Real-time Multi-Device Sync Indicator */}
+        <button
+          onClick={() => syncNow()}
+          title={
+            syncStatus === 'synced'
+              ? 'Multi-Device Sinkron Real-Time Aktif (Klik untuk sinkronkan manual)'
+              : syncStatus === 'syncing'
+              ? 'Sedang menyinkronkan data...'
+              : syncStatus === 'offline'
+              ? 'Mode Offline Lokal Aktif'
+              : 'Sinkronisasi tertunda (Klik untuk mencoba lagi)'
+          }
+          className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] border font-medium transition-all ${
+            syncStatus === 'synced'
+              ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+              : syncStatus === 'syncing'
+              ? 'bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800 animate-pulse'
+              : syncStatus === 'offline'
+              ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+              : 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-500'
+                : syncStatus === 'syncing'
+                ? 'bg-sky-500 animate-ping'
+                : syncStatus === 'offline'
+                ? 'bg-amber-500'
+                : 'bg-rose-500'
+            }`}
+          />
+          <span className="hidden sm:inline">
+            {syncStatus === 'synced'
+              ? 'Real-Time'
+              : syncStatus === 'syncing'
+              ? 'Sinkron...'
+              : syncStatus === 'offline'
+              ? 'Offline'
+              : 'Coba Ulang'}
+          </span>
+        </button>
+
         {/* Google Sheets Connection Pill (Bagian 1 & 13) */}
         <div
           title={

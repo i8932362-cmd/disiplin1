@@ -14,16 +14,9 @@ import {
   Lock,
   Mail,
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-} from 'recharts';
+const HomeroomTrendChart = React.lazy(
+  () => import('../components/charts/HomeroomTrendChart.js')
+);
 import { useApp } from '../context/AppContext.js';
 import { StudentProfileModal } from '../components/modals/StudentProfileModal.js';
 import { exportToExcel } from '../utils/excel.js';
@@ -425,25 +418,9 @@ export const HomeroomView: React.FC = () => {
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
             Grafik Tren Presensi Kelas {currentClass?.name} ({activeTab.toUpperCase()})
           </h2>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={[
-                  { period: 'Pekan 1', Hadir: 28, Terlambat: 2, Alpha: 0 },
-                  { period: 'Pekan 2', Hadir: 29, Terlambat: 1, Alpha: 0 },
-                  { period: 'Pekan 3', Hadir: 27, Terlambat: 3, Alpha: 1 },
-                  { period: 'Pekan 4', Hadir: 30, Terlambat: 0, Alpha: 0 },
-                ]}
-              >
-                <XAxis dataKey="period" stroke="#94a3b8" fontSize={11} />
-                <YAxis stroke="#94a3b8" fontSize={11} />
-                <Tooltip />
-                <Line type="monotone" dataKey="Hadir" stroke="#10b981" strokeWidth={2} />
-                <Line type="monotone" dataKey="Terlambat" stroke="#f59e0b" strokeWidth={2} />
-                <Line type="monotone" dataKey="Alpha" stroke="#ef4444" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <React.Suspense fallback={<div className="h-64 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />}>
+            <HomeroomTrendChart />
+          </React.Suspense>
 
           {/* Tabel Rincian Rekap per Sesi Presensi untuk Pekan Ini */}
           {activeTab === 'weekly' && (

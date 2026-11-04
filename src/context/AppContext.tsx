@@ -287,6 +287,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isSyncingRef = useRef(false);
   const versionRef = useRef(0);
   versionRef.current = serverVersion;
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
+
+  const broadcastSync = useCallback(() => {
+    try {
+      if (syncChannelRef.current) {
+        syncChannelRef.current.postMessage('sync');
+      }
+    } catch {}
+  }, []);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = `toast_${Date.now()}_${Math.random()}`;
@@ -486,8 +495,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         since = 0;
       }
 
-      const res = await fetch(`/api/sync?since=${since}`, {
-        headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+      const res = await fetch(`/api/sync?since=${since}&_t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
         signal: controller.signal,
       });
 
@@ -611,7 +624,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncNow();
   }, [syncNow]);
 
-  // Adaptive Multi-Device Polling & Cross-Tab Broadcast Synchronization
+  // Adaptive Multi-Device Real-Time Polling & Cross-Tab Broadcast Synchronization
   useEffect(() => {
     let intervalId: any;
 
@@ -619,6 +632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
       ? new BroadcastChannel('dkb_sync_bus')
       : null;
+    syncChannelRef.current = syncChannel;
 
     if (syncChannel) {
       syncChannel.onmessage = (event) => {
@@ -631,8 +645,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const setupInterval = () => {
       if (intervalId) clearInterval(intervalId);
       const isVisible = document.visibilityState === 'visible';
-      // 10s polling for active clients (reduced from aggressive 2s to optimize Vercel serverless load), 30s when in background
-      const delay = isVisible ? 10000 : 30000;
+      // Real-time 2.5s polling for active screens, 15s when tab in background
+      const delay = isVisible ? 2500 : 15000;
       intervalId = setInterval(() => {
         syncNow();
       }, delay);
@@ -640,9 +654,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        syncNow(); // Immediate sync on focus
+        syncNow(); // Immediate sync on view focus
       }
       setupInterval();
+    };
+
+    const handleFocus = () => {
+      syncNow();
     };
 
     const handleOnline = () => {
@@ -656,6 +674,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -663,8 +682,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       if (intervalId) clearInterval(intervalId);
-      if (syncChannel) syncChannel.close();
+      if (syncChannel) {
+        syncChannel.close();
+        syncChannelRef.current = null;
+      }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

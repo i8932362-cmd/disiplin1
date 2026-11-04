@@ -1,10 +1,9 @@
-import * as XLSX from 'xlsx';
-
 /**
- * Excel export and import utilities powered by SheetJS
+ * Excel export and import utilities powered by SheetJS (dynamically imported on demand)
  */
 
-export function exportToExcel(data: any[], fileName: string, sheetName = 'Data') {
+export async function exportToExcel(data: any[], fileName: string, sheetName = 'Data') {
+  const XLSX = await import('xlsx');
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -62,6 +61,7 @@ function isMetaSheetName(name: string): boolean {
 }
 
 export async function parseStudentExcel(file: File, fallbackClassId: string = '10-Umum'): Promise<StudentImportRow[]> {
+  const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: 'array' });
   const allRows: StudentImportRow[] = [];

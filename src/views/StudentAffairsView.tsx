@@ -13,15 +13,9 @@ import {
   Clock,
   DoorOpen,
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
+const StudentAffairsComparisonChart = React.lazy(
+  () => import('../components/charts/StudentAffairsComparisonChart.js')
+);
 import { useApp } from '../context/AppContext.js';
 import { StudentProfileModal } from '../components/modals/StudentProfileModal.js';
 import { exportToExcel } from '../utils/excel.js';
@@ -434,20 +428,9 @@ export const StudentAffairsView: React.FC = () => {
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
             Grafik Perbandingan Kedisiplinan Antar Kelas
           </h2>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={comparisonData}>
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
-                <YAxis stroke="#94a3b8" fontSize={11} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: '11px' }} />
-                <Bar dataKey="Hadir" fill="#10b981" />
-                <Bar dataKey="Terlambat" fill="#f59e0b" />
-                <Bar dataKey="Alpha" fill="#ef4444" />
-                <Bar dataKey="PoinPelanggaran" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <React.Suspense fallback={<div className="h-72 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />}>
+            <StudentAffairsComparisonChart comparisonData={comparisonData} />
+          </React.Suspense>
         </div>
       )}
 
