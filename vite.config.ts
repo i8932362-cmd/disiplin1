@@ -1,48 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-
-function apiDevServerPlugin(): Plugin {
-  return {
-    name: 'api-dev-server',
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        if (req.url && req.url.startsWith('/api')) {
-          let body: any = undefined;
-          if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method || '')) {
-            const chunks: Buffer[] = [];
-            for await (const chunk of req) {
-              chunks.push(chunk);
-            }
-            const rawBody = Buffer.concat(chunks).toString('utf-8');
-            if (rawBody) {
-              try {
-                body = JSON.parse(rawBody);
-              } catch {
-                body = rawBody;
-              }
-            }
-          }
-          (req as any).body = body;
-
-          try {
-            const { handleVercelRequest } = await import('./server/vercelHandler.js');
-            await handleVercelRequest(req, res);
-          } catch (err: any) {
-            console.error('[Vite Dev API Error]:', err);
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: err?.message || 'Internal Server Error' }));
-          }
-          return;
-        }
-        next();
-      });
-    },
-  };
-}
 
 export default defineConfig(() => {
   return {
@@ -87,13 +47,11 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\/.*/],
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         },
         devOptions: {
           enabled: true,
         },
       }),
-      apiDevServerPlugin(),
     ],
     resolve: {
       alias: {
@@ -108,27 +66,5 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules/xlsx')) {
-              return 'vendor-xlsx';
-            }
-            if (id.includes('node_modules/recharts')) {
-              return 'vendor-charts';
-            }
-            if (id.includes('node_modules/firebase')) {
-              return 'vendor-firebase';
-            }
-            if (id.includes('node_modules/lucide-react')) {
-              return 'vendor-icons';
-            }
-          },
-        },
-      },
-      chunkSizeWarningLimit: 800,
-    },
   };
 });
-
